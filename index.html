@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#04060c" />
+<title>NAKUL SOLAR SYSTEM — Interactive Astronomical Visualization</title>
+<meta name="description" content="A real-time, scientifically grounded 3D visualization of the Solar System. Built with WebGL, Three.js and procedural shaders." />
+<meta name="author" content="Nakul Sharma" />
+
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400;500&display=swap" />
+<link rel="stylesheet" href="./css/style.css" />
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+
+<!-- ══════════════════════ LOADING ══════════════════════ -->
+<div id="loading-screen" role="status" aria-live="polite">
+  <div class="loading-inner">
+    <div class="loading-emblem" aria-hidden="true">
+      <div class="orbit-ring r1"></div>
+      <div class="orbit-ring r2"></div>
+      <div class="orbit-ring r3"></div>
+      <div class="loading-core"></div>
+    </div>
+    <h1 class="loading-title">NAKUL SOLAR SYSTEM</h1>
+    <p class="loading-sub">INTERACTIVE ASTRONOMICAL VISUALIZATION</p>
+
+    <div class="loading-bar-track">
+      <div id="loading-bar" class="loading-bar-fill"></div>
+    </div>
+
+    <div class="loading-row">
+      <span id="loading-status" class="loading-status">Initialising…</span>
+      <span id="loading-percent" class="loading-percent">0%</span>
+    </div>
+
+    <div id="loading-error" class="loading-error" hidden>
+      <strong>Degraded mode</strong>
+      <span id="loading-error-msg"></span>
+      <button id="loading-continue" class="btn-ghost">Continue anyway</button>
+    </div>
+
+    <p class="loading-foot">Created by Nakul Sharma · Not affiliated with NASA, ESA or JPL</p>
+  </div>
+</div>
+
+<!-- ══════════════════════ CANVAS + LABELS ══════════════════════ -->
+<div id="viewport"></div>
+<div id="label-layer" aria-hidden="true"></div>
+<div id="reticle" aria-hidden="true"></div>
+
+<!-- ══════════════════════ TOP BAR ══════════════════════ -->
+<header id="topbar" class="glass">
+  <div class="brand">
+    <div class="brand-mark" aria-hidden="true"><span></span></div>
+    <div class="brand-text">
+      <h1>NAKUL SOLAR SYSTEM</h1>
+      <p>INTERACTIVE ASTRONOMICAL VISUALIZATION</p>
+    </div>
+  </div>
+
+  <div class="clock">
+    <div class="clock-line">
+      <span class="clock-label">EPOCH</span>
+      <span id="sim-date" class="clock-value mono">—</span>
+    </div>
+    <div class="clock-line">
+      <span class="clock-label">RATE</span>
+      <span id="sim-speed-label" class="clock-value mono accent">—</span>
+    </div>
+  </div>
+
+  <div class="topbar-actions">
+    <button id="btn-search" class="icon-btn" title="Search objects (F)" aria-label="Search objects">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><line x1="16" y1="16" x2="21" y2="21"/></svg>
+    </button>
+    <button id="btn-observatory" class="icon-btn" title="Observatory mode (O)" aria-label="Observatory mode">
+      <svg viewBox="0 0 24 24"><path d="M2 12s3.8-6.5 10-6.5S22 12 22 12s-3.8 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>
+    </button>
+    <button id="btn-about" class="icon-btn" title="About / Sources" aria-label="About and sources">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16.5"/><circle cx="12" cy="7.7" r="0.9" fill="currentColor" stroke="none"/></svg>
+    </button>
+    <button id="btn-settings" class="icon-btn" title="Settings (S)" aria-label="Settings">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M21.5 12h-3M5.5 12h-3M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1M18.7 18.7l-2.1-2.1M7.4 7.4L5.3 5.3"/></svg>
+    </button>
+  </div>
+</header>
+
+<!-- ══════════════════════ LEFT SIDEBAR ══════════════════════ -->
+<aside id="sidebar" class="glass">
+  <div class="panel-head">
+    <span>SYSTEM CATALOGUE</span>
+    <button id="sidebar-close" class="mini-btn" aria-label="Close panel">✕</button>
+  </div>
+  <div class="search-wrap">
+    <svg class="search-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><line x1="16" y1="16" x2="21" y2="21"/></svg>
+    <input id="search-input" type="text" placeholder="Search Mars, Europa, Titan…" autocomplete="off" spellcheck="false" aria-label="Search solar system objects" />
+    <button id="search-clear" class="mini-btn" hidden aria-label="Clear search">✕</button>
+  </div>
+  <div id="object-tree" class="object-tree" role="tree" aria-label="Solar system objects"></div>
+  <div class="panel-foot">
+    <button id="btn-solar-view" class="btn-ghost wide">⟲ Full System View</button>
+  </div>
+</aside>
+
+<!-- ══════════════════════ RIGHT INFO PANEL ══════════════════════ -->
+<aside id="infopanel" class="glass" aria-live="polite">
+  <button id="info-close" class="mini-btn info-close" aria-label="Close information panel">✕</button>
+  <div id="info-content" class="info-content">
+    <div class="info-empty">
+      <div class="info-empty-glyph">◍</div>
+      <p>Select any body to inspect its physical and orbital characteristics.</p>
+    </div>
+  </div>
+  <div class="info-actions">
+    <button id="btn-focus" class="btn-primary" disabled>◉ Focus</button>
+    <button id="btn-track" class="btn-ghost" disabled>⊕ Track</button>
+  </div>
+</aside>
+
+<!-- ══════════════════════ BOTTOM BAR ══════════════════════ -->
+<footer id="bottombar" class="glass">
+  <div class="bb-group">
+    <button id="btn-play" class="icon-btn play-btn" title="Play / Pause (Space)" aria-label="Play or pause simulation">
+      <svg id="icon-play" viewBox="0 0 24 24"><polygon points="6,4 20,12 6,20" fill="currentColor" stroke="none"/></svg>
+      <svg id="icon-pause" viewBox="0 0 24 24" hidden><rect x="6" y="4" width="4" height="16" fill="currentColor" stroke="none"/><rect x="14" y="4" width="4" height="16" fill="currentColor" stroke="none"/></svg>
+    </button>
+    <button id="btn-step-back" class="icon-btn small" title="Step back 1 day" aria-label="Step back one day">
+      <svg viewBox="0 0 24 24"><polygon points="18,5 8,12 18,19" fill="currentColor" stroke="none"/><line x1="6" y1="5" x2="6" y2="19"/></svg>
+    </button>
+    <button id="btn-step-fwd" class="icon-btn small" title="Step forward 1 day" aria-label="Step forward one day">
+      <svg viewBox="0 0 24 24"><polygon points="6,5 16,12 6,19" fill="currentColor" stroke="none"/><line x1="18" y1="5" x2="18" y2="19"/></svg>
+    </button>
+  </div>
+
+  <div class="bb-group speed-group">
+    <span class="bb-label">TIME RATE</span>
+    <input id="speed-slider" type="range" min="0" max="7" step="1" value="3" aria-label="Simulation speed" />
+    <div id="speed-presets" class="speed-presets" role="group" aria-label="Speed presets"></div>
+  </div>
+
+  <div class="bb-group date-group">
+    <span class="bb-label">DATE</span>
+    <input id="date-input" type="date" class="date-input mono" aria-label="Simulation date" />
+    <input id="time-input" type="time" step="60" class="date-input mono" aria-label="Simulation time" />
+    <button id="btn-today" class="btn-ghost tiny">Today</button>
+    <button id="btn-j2000" class="btn-ghost tiny">J2000</button>
+    <button id="btn-reset-time" class="btn-ghost tiny" title="Reset to now and 1× speed">Reset</button>
+  </div>
+
+  <div class="bb-group stats-group">
+    <span id="fps-counter" class="stat mono" title="Frames per second">— FPS</span>
+    <span id="scale-readout" class="stat mono" title="Visualization scale">1 AU = 120 u</span>
+    <button id="sidebar-open" class="icon-btn small" aria-label="Open catalogue panel">
+      <svg viewBox="0 0 24 24"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+    </button>
+  </div>
+</footer>
+
+<!-- ══════════════════════ OBSERVATORY HUD ══════════════════════ -->
+<div id="observatory-hud">
+  <div class="obs-top">
+    <span class="obs-brand">NAKUL SOLAR SYSTEM</span>
+    <span class="obs-sep">/</span>
+    <span id="obs-target" class="obs-target">OBSERVATORY MODE</span>
+  </div>
+  <div class="obs-bottom">
+    <span id="obs-date" class="mono">—</span>
+    <span class="obs-sep">·</span>
+    <span id="obs-speed" class="mono">—</span>
+    <button id="obs-exit" class="btn-ghost tiny">Exit</button>
+  </div>
+</div>
+
+<!-- ══════════════════════ SETTINGS MODAL ══════════════════════ -->
+<div id="settings-modal" class="modal" hidden>
+  <div class="modal-backdrop" data-close="settings-modal"></div>
+  <div class="modal-card glass" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="panel-head">
+      <span id="settings-title">SETTINGS</span>
+      <button class="mini-btn" data-close="settings-modal" aria-label="Close settings">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <div class="setting-row">
+        <label for="set-quality">Graphics quality</label>
+        <select id="set-quality">
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+          <option value="ultra">Ultra</option>
+        </select>
+      </div>
+      <p class="setting-note">Quality changes texture resolution and mesh detail. Applying reloads the visualization.</p>
+
+      <div class="setting-row">
+        <label for="set-stars">Star density <span id="val-stars" class="mono">100%</span></label>
+        <input id="set-stars" type="range" min="0.2" max="2" step="0.1" value="1" />
+      </div>
+
+      <div class="setting-row toggle-row">
+        <label for="set-atmos">Planet atmospheres</label>
+        <input id="set-atmos" type="checkbox" class="switch" />
+      </div>
+
+      <div class="setting-row toggle-row">
+        <label for="set-orbits">Orbit paths</label>
+        <input id="set-orbits" type="checkbox" class="switch" />
+      </div>
+
+      <div class="setting-row toggle-row">
+        <label for="set-moons">Moon systems</label>
+        <input id="set-moons" type="checkbox" class="switch" />
+      </div>
+
+      <div class="setting-row toggle-row">
+        <label for="set-bloom">Bloom / glow</label>
+        <input id="set-bloom" type="checkbox" class="switch" />
+      </div>
+
+      <div class="setting-row toggle-row">
+        <label for="set-labels">Object labels</label>
+        <input id="set-labels" type="checkbox" class="switch" />
+      </div>
+
+      <div class="setting-row toggle-row">
+        <label for="set-cinematic">Cinematic drift</label>
+        <input id="set-cinematic" type="checkbox" class="switch" />
+      </div>
+
+      <div class="setting-row toggle-row">
+        <label for="set-reduced">Reduced motion</label>
+        <input id="set-reduced" type="checkbox" class="switch" />
+      </div>
+
+      <div class="setting-row toggle-row">
+        <label for="set-sound">Ambient sound</label>
+        <input id="set-sound" type="checkbox" class="switch" />
+      </div>
+      <p class="setting-note">Ambient audio is synthesised in the browser (Web Audio) and never autoplays.</p>
+
+      <div class="modal-foot">
+        <button id="btn-apply-quality" class="btn-primary">Apply &amp; Reload</button>
+        <button id="btn-reset-settings" class="btn-ghost">Restore defaults</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════ ABOUT MODAL ══════════════════════ -->
+<div id="about-modal" class="modal" hidden>
+  <div class="modal-backdrop" data-close="about-modal"></div>
+  <div class="modal-card glass wide-card" role="dialog" aria-modal="true" aria-labelledby="about-title">
+    <div class="panel-head">
+      <span id="about-title">ABOUT · SOURCES · CREDITS</span>
+      <button class="mini-btn" data-close="about-modal" aria-label="Close about">✕</button>
+    </div>
+    <div class="modal-body about-body">
+      <h3>NAKUL SOLAR SYSTEM</h3>
+      <p class="about-sub">Interactive Astronomical Visualization · v1.0</p>
+      <p>Real-time 3D visualization of the Solar System. All planetary surfaces, ring systems,
+         nebulae and star fields are <strong>generated procedurally in the browser</strong> using seeded
+         value-noise fields — no third-party imagery is downloaded, so the project is fully
+         offline-capable and free of licensing ambiguity.</p>
+
+      <h4>Orbital &amp; physical data</h4>
+      <ul>
+        <li>E. M. Standish, <em>Keplerian Elements for Approximate Positions of the Major Planets</em> — NASA/JPL Solar System Dynamics. Public domain.</li>
+        <li>NASA Planetary Fact Sheets (NSSDCA) — public domain.</li>
+        <li>JPL Planetary Satellite Physical Parameters — public domain.</li>
+        <li>JPL Horizons / NAIF SPICE documentation — public domain.</li>
+      </ul>
+
+      <h4>Software</h4>
+      <ul>
+        <li>Three.js r160 — MIT License.</li>
+        <li>OrbitControls, EffectComposer, UnrealBloomPass, OutputPass — Three.js examples, MIT License.</li>
+        <li>Inter &amp; JetBrains Mono typefaces — SIL Open Font License 1.1.</li>
+      </ul>
+
+      <h4>Approximations</h4>
+      <ul>
+        <li>Planet positions use first-order Keplerian elements (valid ≈1800–2050 AD).</li>
+        <li>Satellite orbits are modelled as circles in the parent's equatorial plane.</li>
+        <li>Body radii and satellite orbit radii are visually compressed — see <code>README.md</code>.</li>
+        <li>Times are UTC; elements are referenced to TDB. The difference (&lt; 2 min) is not modelled.</li>
+      </ul>
+
+      <p class="disclaimer">This is an independent educational visualization by Nakul Sharma.
+         It is not affiliated with, endorsed by, or produced by NASA, ESA, JPL or any other
+         space agency. All scientific data is attributed to its original public-domain source.</p>
+    </div>
+  </div>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script type="module" src="./js/main.js"></script>
+<noscript>
+  <div style="position:fixed;inset:0;display:grid;place-items:center;background:#04060c;color:#cfe3ff;font-family:sans-serif;text-align:center;padding:2rem;">
+    <p>NAKUL SOLAR SYSTEM requires JavaScript and WebGL to run.</p>
+  </div>
+</noscript>
+</body>
+</html>
