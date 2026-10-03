@@ -39,14 +39,6 @@ function eclipticToScene(p) {
   return new THREE.Vector3(p.x * SCALE.AU, p.z * SCALE.AU, -p.y * SCALE.AU);
 }
 
-function fallbackMaterial(color) {
-  return new THREE.MeshStandardMaterial({
-    color: new THREE.Color(color || '#888888'),
-    roughness: 0.92,
-    metalness: 0.0,
-  });
-}
-
 function surfaceMaterial(color) {
   return new THREE.MeshStandardMaterial({
     color: new THREE.Color(color || '#888888'),
@@ -192,7 +184,7 @@ export class SolarSystem {
 
     /* Surface */
     const mat = surfaceMaterial(p.color);
-    const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, seg, Math.max(12, seg / 2)), mat);
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, seg, Math.max(12, Math.floor(seg / 2))), mat);
     mesh.name = `${p.name}Surface`;
     tiltGroup.add(mesh);
 
@@ -249,7 +241,6 @@ export class SolarSystem {
       _pendingTexture: p.texture,
     };
 
-    // Flat-colour fallback while the texture is being generated.
     mat.color = new THREE.Color(p.color || '#999999');
     mat.emissive = new THREE.Color(p.color || '#000000').multiplyScalar(0.035);
 
@@ -335,7 +326,6 @@ export class SolarSystem {
 
     const data = new Float32Array(count * 4);   // a, phase, inclination, size
     for (let i = 0; i < count; i++) {
-      // Distribution between 2.06 and 3.28 AU.
       const a = 2.06 + Math.pow(rand(), 0.85) * 1.22;
       data[i * 4]     = a;
       data[i * 4 + 1] = rand() * TWO_PI;
@@ -355,9 +345,11 @@ export class SolarSystem {
     const size = this.preset.textureSize;
     const jobs = [];
 
-    // Planets get the full resolution; satellites get a quarter of it.
+    // Planets get the full resolution; Earth is handled separately, satellites
+    // get a quarter of the resolution.
     for (const body of this.planets) {
       if (!body._pendingTexture) continue;
+      if (body.id === 'earth') continue;    // handled by _loadEarth
       jobs.push({ body, spec: body._pendingTexture, size });
     }
     const moonSize = Math.max(128, Math.round(size / 4));
@@ -393,11 +385,9 @@ export class SolarSystem {
       }
     })();
 
-    /* ── Earth is special: day + clouds + lights + normal ─────── */
     const earth = this.bodies.get('earth');
     const earthJob = earth ? this._loadEarth(earth, size) : Promise.resolve();
 
-    /* ── generic bodies ──────────────────────────────────────── */
     const total = jobs.length;
     let done = 0;
 
@@ -431,16 +421,29 @@ export class SolarSystem {
     };
 
     const { map, normalMap } = await this.textures.surface(spec.kind, size, size / 2, opts);
-    if (!map) return;                                  // keep the flat fallback
+    if (!map) return;
 
-    body.material.map = map;
-    if (normalMap && body.material.normalScale) {
-      body.material.normalMap = normalMap;
-      body.material.normalScale.set(0.7, 0.7);
+    const m = body.material;
+    if (!m) return;
+
+    // Standard materials get the full treatment.
+    if (m.isMeshStandardMaterial || m.isMeshPhongMaterial || m.isMeshLambertMaterial) {
+      m.map = map;
+      if (normalMap && m.normalScale) {
+        m.normalMap = normalMap;
+        m.normalScale.set(0.7, 0.7);
+      }
+      if (m.color) m.color.setRGB(1, 1, 1);
+      if (m.emissive) m.emissive.setRGB(0, 0, 0);
+      m.needsUpdate = true;
+      return;
     }
-    body.material.color.setRGB(1, 1, 1);
-    body.material.emissive.setRGB(0, 0, 0);
-    body.material.needsUpdate = true;
+
+    // Custom shader materials: only patch the map if the uniform exists.
+    if (m.uniforms && m.uniforms.uMap) {
+      m.uniforms.uMap.value = map;
+      m.needsUpdate = true;
+    }
   }
 
   async _loadEarth(earth, size) {
@@ -473,11 +476,6 @@ export class SolarSystem {
 
   /* ═══════════════════ UPDATE ═══════════════════ */
 
-  /**
-   * Propagate every body to the given Julian date.
-   * Called once per rendered frame; the cost is O(bodies) with a handful of
-   * trig operations each, which is negligible.
-   */
   update(jd) {
     this._lastJD = jd;
 
@@ -487,7 +485,6 @@ export class SolarSystem {
       body.position.set(helio.x * SCALE.AU, helio.z * SCALE.AU, -helio.y * SCALE.AU);
       body.object3D.position.copy(body.position);
 
-      // Sidereal spin.
       if (body.spinPeriod) {
         const angle = ((jd - J2000_JD) / body.spinPeriod) * TWO_PI;
         body.mesh.rotation.y = angle % TWO_PI;
@@ -502,12 +499,10 @@ export class SolarSystem {
       const local = satelliteLocalPosition(moon.moonData, jd, moon.orbitRadius);
       moon.object3D.position.set(local.x, local.y, local.z);
 
-      // Tidally locked: the moon's spin matches its orbital period.
       const days = jd - J2000_JD;
       const dir = moon.moonData.retrograde ? -1 : 1;
       moon.mesh.rotation.y = (days / moon.moonData.periodDays) * TWO_PI * dir;
 
-      // World position (for camera focus and labels).
       moon.object3D.getWorldPosition(moon.position);
     }
 
@@ -529,7 +524,6 @@ export class SolarSystem {
       const inc = d[i * 4 + 2];
       const size = d[i * 4 + 3];
 
-      // Kepler's third law: period in years = a^1.5, converted to days.
       const periodDays = Math.pow(a, 1.5) * 365.25;
       const angle = phase + (days / periodDays) * TWO_PI;
 
@@ -575,7 +569,6 @@ export class SolarSystem {
     if (this.asteroidBelt) this.asteroidBelt.mesh.visible = on;
   }
 
-  /** All bodies in a stable, display-friendly order. */
   list() {
     return [
       this.bodies.get('sun'),
