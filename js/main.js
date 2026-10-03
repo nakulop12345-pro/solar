@@ -104,6 +104,12 @@ async function start() {
   /* ── 6. UI ───────────────────────────────────────────────────── */
   const ui = new UI(makeHandlers());
 
+  /* ── Simulation state — declared BEFORE applyAllSettings() ──── */
+  let simJD = dateToJD(new Date());
+  let speedMultiplier = 1;
+  let playing = true;
+  let lastSelectedId = null;
+
   ui.setLoading(0.02, 'Loading astronomical data');
 
   await solar.build((p) => {
@@ -209,12 +215,7 @@ async function start() {
     }
   }
 
-  /* ═════════════════ simulation state ═════════════════ */
-
-  let simJD = dateToJD(new Date());
-  let speedMultiplier = 1;
-  let playing = true;
-  let lastSelectedId = null;
+  /* ═════════════════ simulation update ═════════════════ */
 
   function updateSimulation(jd, dt, advance) {
     if (advance && dt > 0) {
@@ -237,7 +238,6 @@ async function start() {
       const el = ui.ensureLabel(body.id, body.name);
       if (!el) continue;
 
-      // Distance-based culling keeps the sky from becoming a wall of text.
       const dist = camPos.distanceTo(body.position);
       const radius = body.displayRadius;
       const apparent = radius / Math.max(0.001, dist);
@@ -274,7 +274,6 @@ async function start() {
       el.style.display = '';
       el.style.transform = `translate(-50%,-50%) translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
 
-      // Fade out when a body is very close to the camera.
       const fade = Math.min(1, Math.max(0, (dist / (radius * 6)) - 0.15));
       el.style.opacity = String(Math.min(1, fade) * (0.55 + Math.min(0.45, apparent * 240)));
 
@@ -302,14 +301,14 @@ async function start() {
     pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(pointer, sm.camera);
 
-    // Hover highlight — cheap: only test planet meshes.
-    const meshes = solar.list().filter(b => !b.isMoon || settings.moons).map(b => b.mesh).filter(Boolean);
+    const meshes = solar.list()
+      .filter(b => (!b.isMoon || settings.moons) && b.mesh)
+      .map(b => b.mesh);
     const hits = raycaster.intersectObjects(meshes, false);
     sm.renderer.domElement.style.cursor = hits.length ? 'pointer' : 'default';
   }
 
   function onCanvasClick(e) {
-    // Ignore the click that ends a drag.
     if (pointerDownAt) {
       const dx = e.clientX - pointerDownAt.x;
       const dy = e.clientY - pointerDownAt.y;
@@ -340,12 +339,10 @@ async function start() {
 
   function makeHandlers() {
     return {
-      /* ── queries ─────────────────────────────────────────── */
       listObjects: () => objects,
       getObject: (id) => solar.bodies.get(id),
       isCinematic: () => document.body.classList.contains('observatory'),
 
-      /* ── selection & camera ──────────────────────────────── */
       focus(id, track) {
         const body = solar.bodies.get(id);
         if (!body) return;
@@ -353,7 +350,6 @@ async function start() {
         director.focus(body, { distanceFactor: factor, duration: 1.6 });
         ui.setReticle(true);
         setTimeout(() => ui.setReticle(false), 2200);
-
         if (track) ui.toast(`Tracking ${body.name}`);
       },
 
@@ -362,7 +358,6 @@ async function start() {
         ui.setReticle(false);
       },
 
-      /* ── time ────────────────────────────────────────────── */
       togglePlay() {
         playing = !playing;
         ui.setPlayState(playing);
@@ -396,7 +391,6 @@ async function start() {
         updateLabels();
       },
 
-      /* ── settings ────────────────────────────────────────── */
       onStarDensity(density) {
         starfield.build(density);
         starfield.setPixelRatio(sm.renderer.getPixelRatio());
@@ -407,7 +401,6 @@ async function start() {
       },
 
       onOrbits(on) {
-        solar.orbitVisibility = on;
         solar.setOrbitsVisible(on);
       },
 
@@ -442,11 +435,8 @@ async function start() {
         document.body.classList.toggle('observatory', on);
         sm.controls.autoRotate = on && !prefersReducedMotion();
         ui.setObservatory(on, lastSelectedId ? (solar.bodies.get(lastSelectedId)?.name) : null);
-        if (on) {
-          ui.toast('Observatory mode · press O or Esc to exit');
-        } else {
-          sm.controls.autoRotate = false;
-        }
+        if (on) ui.toast('Observatory mode · press O or Esc to exit');
+        else sm.controls.autoRotate = false;
       },
 
       toggleLabels() {
@@ -460,15 +450,11 @@ async function start() {
 
       applyAllSettings,
 
-      /* ── loading ─────────────────────────────────────────── */
       dismissLoading() { ui.dismissLoading(); },
     };
   }
 
   function applyAllSettings() {
-    solar.orbitVisibility = settings.orbits;
-    solar.moonVisibility = settings.moons;
-
     solar.setOrbitsVisible(settings.orbits);
     solar.setMoonsVisible(settings.moons);
     solar.setAtmospheresVisible(settings.atmospheres);
@@ -488,23 +474,17 @@ async function start() {
     ui.setScaleReadout('1 AU = 120 units · radii compressed');
   }
 
-  /* ── selection convenience used by both tree and picking ──── */
   function select(id) {
     const body = solar.bodies.get(id);
     if (!body) return;
     lastSelectedId = id;
     ui.showInfo(body);
   }
-
-  /* exposed for the UI keyboard shortcut / search */
-  handlersSelect = select;
 }
 
 /* ══════════════════════════════════════════════════════════════════════
    Utilities
    ══════════════════════════════════════════════════════════════════════ */
-
-let handlersSelect = () => {};
 
 function nextFrame() {
   return new Promise(resolve => requestAnimationFrame(() => resolve()));
